@@ -30,6 +30,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.log4j.Logger;
 
 import java.io.File;
 import java.io.FileReader;
@@ -58,16 +59,20 @@ import java.util.Random;
  */
 public class PageViewRegionExampleDriver {
 
+  private final static Logger LOGGER = Logger.getLogger(PageViewRegionExampleDriver.class.getName());
+
   public static void main(final String[] args) throws IOException {
 
     final String bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
     final String schemaRegistryUrl = args.length > 1 ? args[1] : "http://localhost:8081";
-    final String propertiesFilePath = args.length > 2 ? args[2] : "ccloud.props";
+    final String propertiesFilePath = args.length > 2 ? args[2] : null;
 
     try {
+
       produceInputs(bootstrapServers, schemaRegistryUrl, propertiesFilePath);
 
       consumeOutput(bootstrapServers, propertiesFilePath);
+
     }
     catch (final Exception ex) {
       ex.printStackTrace();
@@ -76,27 +81,33 @@ public class PageViewRegionExampleDriver {
   }
 
   private static void produceInputs(final String bootstrapServers, final String schemaRegistryUrl, final String propertiesFilePath) throws IOException {
-    System.out.println( "> Produce inputs ...");
 
     final String[] users = {"erica", "bob", "joe", "damian", "tania", "phil", "sam", "lauren", "joseph"};
     final String[] regions = {"europe", "usa", "asia", "africa"};
 
-    String temp = null;
-
     final Properties props = new Properties();
-    final File f = new File( propertiesFilePath );
-    if ( f.canRead() ) {
-      props.load( new FileReader( f ) );
-      temp = props.getProperty("schema.registry.url");
+
+    if ( propertiesFilePath != null ) {
+
+      /**
+       * Read properties from a properties file.
+       */
+      final File f = new File(propertiesFilePath);
+      System.out.println("> READ PROPERTIES : " + f.getAbsoluteFile() + " - (" + f.canRead() + ")");
+
+      props.load(new FileReader(f));
+
     }
     else {
+
+      LOGGER.info( "> use CLI parameters " );
+
       props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
       props.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
+
     }
 
-    if ( temp != null ) {
-      props.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, temp);
-    }
+    props.list( System.out );
 
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, io.confluent.kafka.serializers.KafkaAvroSerializer.class);
@@ -113,6 +124,9 @@ public class PageViewRegionExampleDriver {
     pageViewBuilder.set("industry", "eng");
     try (final KafkaProducer<String, GenericRecord> producer = new KafkaProducer<>(props)) {
       for (final String user : users) {
+
+        System.out.println("> user : " + user );
+
         userProfileBuilder.set("experience", "some");
         userProfileBuilder.set("region", regions[random.nextInt(regions.length)]);
         producer.send(new ProducerRecord<>(userProfilesTopic, user, userProfileBuilder.build()));
@@ -122,28 +136,43 @@ public class PageViewRegionExampleDriver {
           pageViewBuilder.set("page", "index.html");
           final GenericData.Record record = pageViewBuilder.build();
           producer.send(new ProducerRecord<>(pageViewsTopic, null, record));
-          System.out.println( user );
         }
       }
     }
+
+    System.out.println("*** EXAMPLE DATA CREATED *** " );
+
   }
 
   private static void consumeOutput(final String bootstrapServers, final String propertiesFilePath) {
+
     final String resultTopic = "PageViewsByRegion";
+    System.out.println("*** WAITING FOR RESULTS *** " );
+    System.out.println("*** (from topic : " + resultTopic );
 
     final Properties consumerProperties = new Properties();
     final File f = new File( propertiesFilePath );
-    if ( f.canRead() ) {
-      try {
-        consumerProperties.load( new FileReader( f ) );
-      } catch (final IOException e) {
-        e.printStackTrace();
-      }
+    String tempBootstrapServers = null;
+
+    System.out.println("> READ PROPERTIES : " + f.getAbsoluteFile() + " - (" + f.canRead() + ")");
+
+    try {
+
+      consumerProperties.load(new FileReader(f));
+
+      consumerProperties.list( System.out );
+
+      tempBootstrapServers = consumerProperties.getProperty("bootstrap.servers");
+
     }
-    else {
-      consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+    catch (final IOException e) {
+      e.printStackTrace();
     }
 
+    if ( tempBootstrapServers != null )
+      consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, tempBootstrapServers);
+    else
+      consumerProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
 
     consumerProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     consumerProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class);

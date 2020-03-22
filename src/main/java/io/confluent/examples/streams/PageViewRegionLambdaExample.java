@@ -116,21 +116,31 @@ import java.util.Properties;
 public class PageViewRegionLambdaExample {
 
   public static void main(final String[] args) throws Exception {
-    final String bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
-    final String schemaRegistryUrl = args.length > 1 ? args[1] : "http://localhost:8081";
-    final String propertiesFilePath = args.length > 2 ? args[2] : "ccloud.props";
 
+    String bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
+    String schemaRegistryUrl = args.length > 1 ? args[1] : "http://localhost:8081";
+
+    final String propertiesFilePath = args.length > 2 ? args[2] : null;
 
     final Properties streamsConfiguration = new Properties();
 
-    String temp = null;
+    if ( propertiesFilePath != null ) {
 
-    final File f = new File( propertiesFilePath );
-    if ( f.canRead() ) {
-      streamsConfiguration.load( new FileReader( f ) );
-      temp = streamsConfiguration.getProperty("schema.registry.url");
+      /**
+       * Read properties from a properties file.
+       */
+      final File f = new File(propertiesFilePath);
+      System.out.println("> READ PROPERTIES : " + f.getAbsoluteFile() + " - (" + f.canRead() + ")");
+
+      streamsConfiguration.load(new FileReader(f));
+        // we keep the Schema registry property from the file to apply the setting also for the AbstractKafkaAvroSerDeConfig
+      schemaRegistryUrl = streamsConfiguration.getProperty("schema.registry.url");
+      bootstrapServers = streamsConfiguration.getProperty("bootstrap.servers");
 
     }
+
+    streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+
 
     // Give the Streams application a unique name.  The name must be unique in the Kafka cluster
     // against which the application is run.
@@ -141,20 +151,17 @@ public class PageViewRegionLambdaExample {
     // streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
 
     // Where to find the Confluent schema registry instance(s)
-    if ( temp != null ) {
-      streamsConfiguration.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
-    }
+    streamsConfiguration.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
 
-
-
-
-    // Specify default (de)serializers for record keys and for record values.
-    streamsConfiguration.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
-    streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, GenericAvroSerde.class);
     streamsConfiguration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     // Records should be flushed every 10 seconds. This is less than the default
     // in order to keep this example interactive.
     streamsConfiguration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 10 * 1000);
+
+    // Specify default (de)serializers for record keys and for record values.
+    streamsConfiguration.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
+    streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, GenericAvroSerde.class);
+
 
     final Serde<String> stringSerde = Serdes.String();
     final Serde<Long> longSerde = Serdes.Long();
